@@ -7,7 +7,7 @@ import { DeckModal } from '@/components/decks/DeckModal';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Deck } from '@/types';
-import { Plus, Layers, Search } from 'lucide-react';
+import { Plus, Layers } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 
 export default function DecksPage() {
@@ -23,36 +23,40 @@ export default function DecksPage() {
   );
 
   const handleSave = async (data: { name: string; description: string; color: string }) => {
-    if (editingDeck) {
-      await update(editingDeck.$id, data);
-    } else {
-      await create(data);
-    }
+    if (editingDeck) await update(editingDeck.$id, data);
+    else await create(data);
   };
 
   const handleEdit = (deck: Deck) => { setEditingDeck(deck); setModalOpen(true); };
   const handleClose = () => { setModalOpen(false); setEditingDeck(null); };
 
   return (
-    <div className="px-8 py-8 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8 max-w-5xl mx-auto pb-24 lg:pb-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-semibold text-[--foreground]">Mis mazos</h1>
-          <p className="text-[--muted] text-sm mt-0.5">{decks.length} {decks.length === 1 ? 'mazo' : 'mazos'}</p>
+          <h1 className="text-xl sm:text-2xl font-semibold text-[--foreground]">Mis mazos</h1>
+          <p className="text-[--muted] text-xs sm:text-sm mt-0.5">
+            {decks.length} {decks.length === 1 ? 'mazo' : 'mazos'}
+          </p>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
-          <Plus size={16} /> Nuevo mazo
+        <Button onClick={() => setModalOpen(true)} size="sm">
+          <Plus size={15} />
+          <span className="hidden sm:inline">Nuevo mazo</span>
+          <span className="sm:hidden">Nuevo</span>
         </Button>
       </div>
 
+      {/* Search */}
       {decks.length > 3 && (
-        <div className="mb-5 max-w-xs">
+        <div className="mb-5">
           <Input placeholder="Buscar mazos…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
       )}
 
+      {/* Grid — 1 col on mobile, 2 on sm, 3 on lg */}
       {loading ? (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1,2,3].map(i => <div key={i} className="h-40 bg-[--accent] rounded-2xl animate-pulse" />)}
         </div>
       ) : filtered.length === 0 ? (

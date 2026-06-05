@@ -58,7 +58,7 @@ export function Sidebar() {
             <BookOpen size={16} className="text-white dark:text-gray-900" />
           </div>
           <span className="font-semibold text-gray-900 dark:text-white text-lg tracking-tight">
-            Memori
+            AkinMind
           </span>
         </div>
       </div>

@@ -54,9 +54,12 @@ export default function DashboardPage() {
   const today = new Date().getDay();
 
   return (
-    <div className="px-8 py-8 max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-[--foreground]">{greeting}, {user?.name?.split(' ')[0]} 👋</h1>
+    <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8 max-w-4xl mx-auto pb-24 lg:pb-8">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-xl sm:text-2xl font-semibold text-[--foreground]">
+          {greeting}, {user?.name?.split(' ')[0]} 👋
+        </h1>
         <p className="text-[--muted] text-sm mt-1">
           {dueCards.length > 0
             ? `Tienes ${dueCards.length} tarjeta${dueCards.length > 1 ? 's' : ''} pendiente${dueCards.length > 1 ? 's' : ''} hoy`
@@ -64,48 +67,55 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      {/* Stats — 2 cols on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         <StatCard label="Pendientes" value={dueCards.length} icon={<Clock size={12} />} sub="para hoy" />
-        <StatCard label="Estudiadas hoy" value={todayReviews.length} icon={<CheckCircle size={12} />} />
-        <StatCard label="Racha" value={`${streak} días`} icon={<Flame size={12} />} sub={streak > 0 ? '¡Sigue así!' : 'Empieza hoy'} />
-        <StatCard label="Total mazos" value={decks.length} icon={<BookOpen size={12} />} />
+        <StatCard label="Hoy" value={todayReviews.length} icon={<CheckCircle size={12} />} sub="estudiadas" />
+        <StatCard label="Racha" value={`${streak}d`} icon={<Flame size={12} />} sub={streak > 0 ? '¡Sigue así!' : 'Empieza hoy'} />
+        <StatCard label="Mazos" value={decks.length} icon={<BookOpen size={12} />} />
       </div>
 
       {/* Streak week */}
-      <div className="bg-[--card-bg] rounded-2xl border border-[--border] p-5 mb-6">
+      <div className="bg-[--card-bg] rounded-2xl border border-[--border] p-4 sm:p-5 mb-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-[--foreground]">Esta semana</h2>
-          {streak > 0 && <span className="flex items-center gap-1 text-xs text-orange-500 font-medium"><Flame size={12} /> {streak} días de racha</span>}
+          {streak > 0 && (
+            <span className="flex items-center gap-1 text-xs text-orange-500 font-medium">
+              <Flame size={12} /> {streak} días
+            </span>
+          )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 sm:gap-2">
           {days.map((d, i) => {
             const isToday = i === (today === 0 ? 6 : today - 1);
             const studied = i < (today === 0 ? 6 : today - 1);
             return (
-              <div key={d} className={`flex-1 flex flex-col items-center gap-1.5`}>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-medium transition-colors
-                  ${isToday ? 'bg-[--primary] text-[--primary-fg]' :
-                    studied ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                    'bg-[--accent] text-[--muted]'}`}>
+              <div key={d} className="flex-1 flex flex-col items-center gap-1.5">
+                <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs font-medium transition-colors
+                  ${isToday
+                    ? 'bg-[--primary] text-[--primary-fg]'
+                    : studied
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                      : 'bg-[--accent] text-[--muted]'
+                  }`}>
                   {studied && !isToday ? '✓' : d}
                 </div>
-                <span className="text-xs text-[--muted]">{d}</span>
+                <span className="text-xs text-[--muted] hidden sm:block">{d}</span>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* CTA if due cards */}
+      {/* CTA banner */}
       {dueCards.length > 0 && decks.length > 0 && (
-        <div className="bg-[--primary] rounded-2xl p-5 mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-[--primary-fg] font-semibold mb-0.5">¡Es hora de estudiar!</p>
-            <p className="text-[--primary-fg]/60 text-sm">{dueCards.length} tarjetas esperan tu revisión</p>
+        <div className="bg-[--primary] rounded-2xl p-4 sm:p-5 mb-5 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[--primary-fg] font-semibold text-sm sm:text-base">¡Es hora de estudiar!</p>
+            <p className="text-[--primary-fg]/60 text-xs sm:text-sm">{dueCards.length} tarjetas esperan</p>
           </div>
-          <Button variant="secondary" onClick={() => router.push('/decks')} className="shrink-0">
-            <Zap size={14} /> Estudiar ahora
+          <Button variant="secondary" onClick={() => router.push('/decks')} className="shrink-0 text-xs sm:text-sm">
+            <Zap size={14} /> <span className="hidden sm:inline">Estudiar ahora</span><span className="sm:hidden">Ir</span>
           </Button>
         </div>
       )}
@@ -129,19 +139,22 @@ export default function DashboardPage() {
               const colors = getDeckColors(deck.color);
               return (
                 <div key={deck.$id}
-                  className="bg-[--card-bg] rounded-xl border border-[--border] px-4 py-3 flex items-center gap-3 hover:border-[--primary]/20 cursor-pointer transition-colors"
+                  className="bg-[--card-bg] rounded-xl border border-[--border] px-4 py-3 flex items-center gap-3 hover:border-[--primary]/20 cursor-pointer transition-colors active:scale-[0.99]"
                   onClick={() => router.push(`/decks/${deck.$id}`)}>
                   <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: deck.color }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[--foreground] truncate">{deck.name}</p>
-                    <p className="text-xs text-[--muted]">{deck.totalCards} tarjetas{deck.lastStudied ? ` · ${formatRelative(deck.lastStudied)}` : ''}</p>
+                    <p className="text-xs text-[--muted]">
+                      {deck.totalCards} tarjetas{deck.lastStudied ? ` · ${formatRelative(deck.lastStudied)}` : ''}
+                    </p>
                   </div>
                   {deck.dueCards > 0 ? (
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0" style={{ backgroundColor: colors.bg, color: colors.text }}>
-                      {deck.dueCards} pendientes
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
+                      style={{ backgroundColor: colors.bg, color: colors.text }}>
+                      {deck.dueCards}
                     </span>
                   ) : (
-                    <span className="text-xs text-green-500 font-medium shrink-0">✓ Al día</span>
+                    <span className="text-xs text-green-500 font-medium shrink-0">✓</span>
                   )}
                   <ChevronRight size={14} className="text-[--muted] shrink-0" />
                 </div>
