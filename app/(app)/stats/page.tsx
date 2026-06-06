@@ -3,135 +3,271 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getUserStats, getWeekReviews, getDecks } from '@/lib/database';
 import { UserStats, Review, Deck } from '@/types';
-import { Flame, Target, Clock, TrendingUp, Award, BookOpen } from 'lucide-react';
+import { Flame, Target, Clock, TrendingUp, Award, BookOpen, RefreshCw } from 'lucide-react';
+import { syncUserStats } from '@/lib/statsSync';
 
-function StatCard({ icon, label, value, sub, color }: { icon: React.ReactNode; label: string; value: string | number; sub?: string; color?: string }) {
+function StatCard({ icon, label, value, sub, color }: {
+  icon: React.ReactNode; label: string; value: string | number; sub?: string; color?: string;
+}) {
   return (
     <div className="bg-[--card-bg] rounded-2xl border border-[--border] p-4 sm:p-5">
       <div className="flex items-center gap-2 mb-3" style={{ color: color || 'var(--muted)' }}>
-        {icon}<span className="text-xs font-medium">{label}</span>
+        {icon}<span className="text-xs font-medium uppercase tracking-wide">{label}</span>
       </div>
-      <div className="text-2xl sm:text-3xl font-semibold text-[--foreground]">{value}</div>
-      {sub && <div className="text-xs text-[--muted] mt-1">{sub}</div>}
+      <div className="text-2xl sm:text-3xl font-semibold" style={{ color: 'var(--foreground)' }}>{value}</div>
+      {sub && <div className="text-xs mt-1" style={{ color: 'var(--muted)' }}>{sub}</div>}
     </div>
   );
 }
 
+function fmtTime(seconds: number): string {
+  if (!seconds || seconds < 60) return `${seconds || 0}s`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 export default function StatsPage() {
   const { user } = useAuth();
-  const [stats, setStats] = useState<UserStats | null>(null);
+  const [stats, setStats]           = useState<UserStats | null>(null);
   const [weekReviews, setWeekReviews] = useState<Review[]>([]);
-  const [decks, setDecks] = useState<Deck[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [decks, setDecks]           = useState<Deck[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [syncing, setSyncing]       = useState(false);
 
-  useEffect(() => {
+  const load = async () => {
     if (!user) return;
-    Promise.all([
+    const [s, r, d] = await Promise.all([
       getUserStats(user.$id),
       getWeekReviews(user.$id),
       getDecks(user.$id),
-    ]).then(([s, r, d]) => {
-      setStats(s); setWeekReviews(r); setDecks(d);
-    }).finally(() => setLoading(false));
+    ]);
+    setStats(s); setWeekReviews(r); setDecks(d);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    setLoading(true);
+    load().finally(() => setLoading(false));
   }, [user]);
 
-  const weekData = Array(7).fill(0).map((_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - i));
-    date.setHours(0, 0, 0, 0);
-    const next = new Date(date); next.setDate(next.getDate() + 1);
-    const count = weekReviews.filter(r => {
-      const d = new Date(r.reviewedAt);
-      return d >= date && d < next;
-    }).length;
-    return {
-      label: ['L','M','X','J','V','S','D'][(date.getDay() + 6) % 7],
-      count,
-      isToday: i === 6,
-    };
-  });
+  // Manual recalculate button — useful if stats seem wrong
+  const handleResync = async () => {
+    if (!user) return;
+    setSyncing(true);
+    await syncUserStats(user.$id);
+    await load();
+    setSyncing(false);
+  };
+
+  // ── Weekly chart data ─────────────────────────────────────────────────────
+  // Always show Mon→Sun of the CURRENT week
+  const weekData = (() => {
+    const today = new Date();
+    const todayIdx = (today.getDay() + 6) % 7; // 0=Mon…6=Sun
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (todayIdx - i));
+      date.setHours(0, 0, 0, 0);
+      const next = new Date(date);
+      next.setDate(date.getDate() + 1);
+
+      const count = weekReviews.filter(r => {
+        const d = new Date(r.reviewedAt);
+        return d >= date && d < next;
+      }).length;
+
+      return {
+        label: ['L', 'M', 'X', 'J', 'V', 'S', 'D'][i],
+        count,
+        isToday: i === todayIdx,
+        isFuture: i > todayIdx,
+      };
+    });
+  })();
 
   const maxCount = Math.max(...weekData.map(d => d.count), 1);
-  const accuracy = weekReviews.length > 0
-    ? Math.round((weekReviews.filter(r => r.rating >= 3).length / weekReviews.length) * 100)
-    : 0;
 
-  const totalMins = stats ? Math.round(stats.totalTimeSeconds / 60) : 0;
-  const timeStr = totalMins >= 60 ? `${Math.round(totalMins / 60)}h ${totalMins % 60}m` : `${totalMins}m`;
+  // ── Precision: from week reviews (ratings 3 or 4 = correct) ──────────────
+  const weekAccuracy = weekReviews.length > 0
+    ? Math.round((weekReviews.filter(r => r.rating >= 3).length / weekReviews.length) * 100)
+    : null;
+
+  // ── Time: from user_stats (accumulated across all time) ──────────────────
+  const totalTime   = fmtTime(stats?.totalTimeSeconds ?? 0);
+  const streak      = stats?.currentStreak ?? 0;
+  const bestStreak  = stats?.longestStreak ?? 0;
+  const totalReviews = stats?.totalReviews ?? 0;
+  const cardsLearned = stats?.cardsLearned ?? 0;
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-[--primary]/20 border-t-[--primary] rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 rounded-full animate-spin"
+        style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }} />
     </div>
   );
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8 max-w-4xl mx-auto pb-24 lg:pb-8">
-      <h1 className="text-xl sm:text-2xl font-semibold text-[--foreground] mb-5">Estadísticas</h1>
 
-      {/* Stats — 2 cols on mobile, 3 on desktop */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
-        <StatCard icon={<Flame size={14} />} label="Racha actual" value={`${stats?.currentStreak || 0}d`}
-          sub={`Mejor: ${stats?.longestStreak || 0} días`} color="#f97316" />
-        <StatCard icon={<Target size={14} />} label="Precisión" value={`${accuracy}%`}
-          sub="esta semana" color="#10b981" />
-        <StatCard icon={<Clock size={14} />} label="Tiempo total" value={timeStr}
-          sub="de estudio" color="#6366f1" />
-        <StatCard icon={<TrendingUp size={14} />} label="Revisiones" value={stats?.totalReviews || 0} />
-        <StatCard icon={<Award size={14} />} label="Dominadas" value={stats?.cardsLearned || 0}
-          sub="5+ correctas" color="#f59e0b" />
-        <StatCard icon={<BookOpen size={14} />} label="Mazos" value={decks.length} />
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-xl sm:text-2xl font-semibold" style={{ color: 'var(--foreground)' }}>
+          Estadísticas
+        </h1>
+        {/* Recalculate button */}
+        <button
+          onClick={handleResync}
+          disabled={syncing}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+          style={{ backgroundColor: 'var(--accent)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+          title="Recalcular estadísticas"
+        >
+          <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+          {syncing ? 'Calculando…' : 'Recalcular'}
+        </button>
       </div>
 
-      {/* Weekly chart */}
+      {/* ── Stat cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
+
+        <StatCard
+          icon={<Flame size={14} />}
+          label="Racha actual"
+          value={`${streak}d`}
+          sub={`Mejor racha: ${bestStreak} días`}
+          color="#f97316"
+        />
+
+        <StatCard
+          icon={<Target size={14} />}
+          label="Precisión"
+          value={weekAccuracy !== null ? `${weekAccuracy}%` : '—'}
+          sub={weekReviews.length > 0 ? `${weekReviews.length} revisiones esta semana` : 'Sin revisiones esta semana'}
+          color="#10b981"
+        />
+
+        <StatCard
+          icon={<Clock size={14} />}
+          label="Tiempo total"
+          value={totalTime}
+          sub="tiempo acumulado estudiando"
+          color="#6366f1"
+        />
+
+        <StatCard
+          icon={<TrendingUp size={14} />}
+          label="Revisiones totales"
+          value={totalReviews}
+          sub="todas las sesiones"
+        />
+
+        <StatCard
+          icon={<Award size={14} />}
+          label="Dominadas"
+          value={cardsLearned}
+          sub="tarjetas con 5+ correctas"
+          color="#f59e0b"
+        />
+
+        <StatCard
+          icon={<BookOpen size={14} />}
+          label="Mazos"
+          value={decks.length}
+        />
+      </div>
+
+      {/* ── Weekly chart ── */}
       <div className="bg-[--card-bg] rounded-2xl border border-[--border] p-4 sm:p-6 mb-5">
-        <h2 className="text-sm font-semibold text-[--foreground] mb-5">Últimos 7 días</h2>
-        <div className="flex items-end gap-2 sm:gap-3 h-28 sm:h-32">
-          {weekData.map(({ label, count, isToday }) => (
-            <div key={label} className="flex-1 flex flex-col items-center gap-1.5 sm:gap-2">
-              <span className="text-xs text-[--muted]">{count > 0 ? count : ''}</span>
-              <div className="w-full rounded-t-lg transition-all" style={{
-                height: `${Math.max((count / maxCount) * 80, count > 0 ? 8 : 3)}px`,
-                backgroundColor: isToday ? 'var(--primary)' : count > 0 ? '#cbd5e1' : '#f1f5f9',
+        <h2 className="text-sm font-semibold mb-5" style={{ color: 'var(--foreground)' }}>
+          Esta semana
+        </h2>
+        <div className="flex items-end gap-2 sm:gap-3" style={{ height: 120 }}>
+          {weekData.map(({ label, count, isToday, isFuture }) => (
+            <div key={label} className="flex-1 flex flex-col items-center gap-1.5">
+              <span className="text-xs" style={{ color: 'var(--muted)', minHeight: 16 }}>
+                {count > 0 ? count : ''}
+              </span>
+              <div className="w-full rounded-t-lg transition-all duration-500" style={{
+                height: isFuture
+                  ? 3
+                  : count === 0
+                    ? 3
+                    : Math.max(8, Math.round((count / maxCount) * 80)),
+                backgroundColor: isToday
+                  ? 'var(--primary)'
+                  : count > 0
+                    ? '#94a3b8'
+                    : 'var(--accent)',
+                opacity: isFuture ? 0.3 : 1,
               }} />
-              <span className={`text-xs font-medium ${isToday ? 'text-[--foreground]' : 'text-[--muted]'}`}>
+              <span className="text-xs font-medium" style={{
+                color: isToday ? 'var(--foreground)' : 'var(--muted)',
+                fontWeight: isToday ? 600 : 400,
+              }}>
                 {label}
               </span>
             </div>
           ))}
         </div>
-        <div className="mt-4 pt-4 border-t border-[--border] flex justify-between text-xs text-[--muted]">
-          <span>{weekReviews.length} revisiones</span>
+        <div className="mt-4 pt-4 flex justify-between text-xs" style={{ borderTop: '1px solid var(--border)', color: 'var(--muted)' }}>
+          <span>{weekReviews.length} revisiones esta semana</span>
           <span>~{Math.round(weekReviews.length / 7)}/día</span>
         </div>
       </div>
 
-      {/* Deck progress */}
+      {/* ── Deck progress ── */}
       {decks.length > 0 && (
         <div className="bg-[--card-bg] rounded-2xl border border-[--border] p-4 sm:p-6">
-          <h2 className="text-sm font-semibold text-[--foreground] mb-4">Progreso por mazo</h2>
-          <div className="flex flex-col gap-4">
+          <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--foreground)' }}>
+            Progreso por mazo
+          </h2>
+          <div className="flex flex-col gap-5">
             {decks.map(deck => {
-              const deckReviews = weekReviews.filter(r => r.deckId === deck.$id).length;
+              const deckWeekReviews = weekReviews.filter(r => r.deckId === deck.$id).length;
+
+              // Progress = percentage of cards NOT due (al día)
               const pct = deck.totalCards > 0
-                ? Math.min(100, Math.round(((deck.totalCards - deck.dueCards) / deck.totalCards) * 100))
+                ? Math.min(100, Math.round(((deck.totalCards - (deck.dueCards || 0)) / deck.totalCards) * 100))
                 : 0;
+
+              // Deck-level accuracy this week
+              const deckCorrect = weekReviews.filter(r => r.deckId === deck.$id && r.rating >= 3).length;
+              const deckAcc = deckWeekReviews > 0
+                ? Math.round((deckCorrect / deckWeekReviews) * 100)
+                : null;
+
               return (
                 <div key={deck.$id}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: deck.color }} />
-                      <span className="text-sm text-[--foreground] truncate">{deck.name}</span>
+                      <span className="text-sm truncate" style={{ color: 'var(--foreground)' }}>{deck.name}</span>
                     </div>
-                    <span className="text-xs text-[--muted] shrink-0 ml-2">{pct}%</span>
+                    <div className="flex items-center gap-3 shrink-0 ml-2">
+                      {deckAcc !== null && (
+                        <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                          {deckAcc}% acierto
+                        </span>
+                      )}
+                      <span className="text-xs font-medium" style={{ color: 'var(--foreground)' }}>{pct}%</span>
+                    </div>
                   </div>
-                  <div className="h-2 bg-[--accent] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500"
+                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--accent)' }}>
+                    <div className="h-full rounded-full transition-all duration-700"
                       style={{ width: `${pct}%`, backgroundColor: deck.color }} />
                   </div>
-                  {deckReviews > 0 && (
-                    <p className="text-xs text-[--muted] mt-1">{deckReviews} revisiones esta semana</p>
-                  )}
+                  <div className="flex justify-between mt-1">
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {deck.totalCards} tarjetas · {deck.dueCards || 0} pendientes
+                    </span>
+                    {deckWeekReviews > 0 && (
+                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                        {deckWeekReviews} esta semana
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}

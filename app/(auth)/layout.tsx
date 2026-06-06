@@ -42,7 +42,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             </div>
           )}
           <h1 className="text-2xl font-semibold text-[--foreground]">{BRAND.name}</h1>
-          <p className="text-[--muted] text-sm mt-1">Aprende más, recuerda más</p>
+          {/* <p className="text-[--muted] text-sm mt-1">Aprende más, recuerda más</p> */}
         </div>
         <div className="bg-[--card-bg] rounded-2xl border border-[--border] p-6 shadow-sm">
           {children}

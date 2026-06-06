@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { databases, DATABASE_ID, COLLECTION_DECKS } from '@/lib/appwrite';
 import { getCards } from '@/lib/database';
+import { syncUserStats } from '@/lib/statsSync';
 import { Deck, Card } from '@/types';
 import { StudyLobby, SessionConfig } from '@/components/study/StudyLobby';
 import { StudySession, SessionResult } from '@/components/study/StudySession';
@@ -46,21 +47,16 @@ export default function StudyPage() {
 
   if (!deck) return null;
 
-  // ── Lobby ──────────────────────────────────────────────────────────────────
   if (phase === 'lobby') {
     return (
       <StudyLobby
         deck={deck}
         allCards={allCards}
-        onStart={cfg => {
-          setConfig(cfg);
-          setPhase('session');
-        }}
+        onStart={cfg => { setConfig(cfg); setPhase('session'); }}
       />
     );
   }
 
-  // ── Session ────────────────────────────────────────────────────────────────
   if (phase === 'session' && config) {
     return (
       <StudySession
@@ -69,15 +65,16 @@ export default function StudyPage() {
         deckName={deck.name}
         deckColor={deck.color}
         userId={user!.$id}
-        onComplete={res => {
+        onComplete={async res => {
           setResult(res);
           setPhase('complete');
+          // ← Aquí es donde se sincronizan las stats después de cada sesión
+          await syncUserStats(user!.$id);
         }}
       />
     );
   }
 
-  // ── Complete ───────────────────────────────────────────────────────────────
   if (phase === 'complete' && result) {
     return (
       <StudyComplete
@@ -85,7 +82,6 @@ export default function StudyPage() {
         deckName={deck.name}
         result={result}
         onStudyMore={async () => {
-          // Reload cards from server to get updated nextReview dates
           await load();
           setPhase('lobby');
         }}
