@@ -1,73 +1,97 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { databases, DATABASE_ID, COLLECTION_DECKS } from '@/lib/appwrite';
-import { getDueCards, getCards } from '@/lib/database';
+import { getCards } from '@/lib/database';
 import { Deck, Card } from '@/types';
-import { StudySession } from '@/components/study/StudySession';
+import { StudyLobby, SessionConfig } from '@/components/study/StudyLobby';
+import { StudySession, SessionResult } from '@/components/study/StudySession';
 import { StudyComplete } from '@/components/study/StudyComplete';
-import { Button } from '@/components/ui/Button';
-import { ArrowLeft } from 'lucide-react';
+
+type Phase = 'lobby' | 'session' | 'complete';
 
 export default function StudyPage() {
-  const params = useParams();
-  const deckId = params.deckId as string;
+  const params  = useParams();
+  const deckId  = params.deckId as string;
   const { user } = useAuth();
-  const router = useRouter();
-  const [deck, setDeck] = useState<Deck | null>(null);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [completed, setCompleted] = useState(false);
 
-  const loadCards = async () => {
+  const [deck, setDeck]         = useState<Deck | null>(null);
+  const [allCards, setAllCards] = useState<Card[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [phase, setPhase]       = useState<Phase>('lobby');
+  const [config, setConfig]     = useState<SessionConfig | null>(null);
+  const [result, setResult]     = useState<SessionResult | null>(null);
+
+  const load = async () => {
     if (!user) return;
-    const [d, allCards] = await Promise.all([
+    setLoading(true);
+    const [d, cards] = await Promise.all([
       databases.getDocument(DATABASE_ID, COLLECTION_DECKS, deckId),
       getCards(deckId),
     ]);
     setDeck(d as unknown as Deck);
-    const due = allCards.filter(c => !c.nextReview || new Date(c.nextReview) <= new Date());
-    setCards(due.length > 0 ? due : allCards.slice(0, 20));
+    setAllCards(cards);
     setLoading(false);
   };
 
-  useEffect(() => { loadCards(); }, [deckId, user]);
+  useEffect(() => { load(); }, [deckId, user]);
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="w-8 h-8 border-2 border-[--primary]/20 border-t-[--primary] rounded-full animate-spin" />
+    <div className="flex items-center justify-center h-screen" style={{ backgroundColor: 'var(--background)' }}>
+      <div className="w-8 h-8 border-2 rounded-full animate-spin"
+        style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }} />
     </div>
   );
 
   if (!deck) return null;
 
-  if (cards.length === 0) return (
-    <div className="flex flex-col items-center justify-center h-screen px-4 text-center">
-      <p className="text-[--foreground] font-semibold text-lg mb-2">No hay tarjetas para estudiar</p>
-      <p className="text-[--muted] text-sm mb-6">Este mazo no tiene tarjetas todavía</p>
-      <Button onClick={() => router.push(`/decks/${deckId}`)}>
-        <ArrowLeft size={16} /> Volver al mazo
-      </Button>
-    </div>
-  );
+  // ── Lobby ──────────────────────────────────────────────────────────────────
+  if (phase === 'lobby') {
+    return (
+      <StudyLobby
+        deck={deck}
+        allCards={allCards}
+        onStart={cfg => {
+          setConfig(cfg);
+          setPhase('session');
+        }}
+      />
+    );
+  }
 
-  if (completed) return (
-    <StudyComplete
-      deckName={deck.name}
-      totalReviewed={cards.length}
-      onStudyAgain={() => { setCompleted(false); loadCards(); }}
-    />
-  );
+  // ── Session ────────────────────────────────────────────────────────────────
+  if (phase === 'session' && config) {
+    return (
+      <StudySession
+        cards={config.cards}
+        deckId={deckId}
+        deckName={deck.name}
+        deckColor={deck.color}
+        userId={user!.$id}
+        onComplete={res => {
+          setResult(res);
+          setPhase('complete');
+        }}
+      />
+    );
+  }
 
-  return (
-    <StudySession
-      cards={cards}
-      deckId={deckId}
-      deckName={deck.name}
-      deckColor={deck.color}
-      userId={user!.$id}
-      onComplete={() => setCompleted(true)}
-    />
-  );
+  // ── Complete ───────────────────────────────────────────────────────────────
+  if (phase === 'complete' && result) {
+    return (
+      <StudyComplete
+        deckId={deckId}
+        deckName={deck.name}
+        result={result}
+        onStudyMore={async () => {
+          // Reload cards from server to get updated nextReview dates
+          await load();
+          setPhase('lobby');
+        }}
+      />
+    );
+  }
+
+  return null;
 }
