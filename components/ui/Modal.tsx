@@ -22,32 +22,45 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      {/* Solid dark overlay — no backdrop-blur that fails on some browsers */}
+      <div
+        className="absolute inset-0"
+        style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+        onClick={onClose}
+      />
 
-      {/* Sheet on mobile, centered modal on sm+ */}
+      {/* Modal panel — fully opaque, never transparent */}
       <div className={cn(
-        'relative bg-[--card-bg] border border-[--border] w-full fade-in',
-        // Mobile: bottom sheet
-        'rounded-t-2xl max-h-[90vh] overflow-y-auto',
+        'relative w-full fade-in',
+        // Mobile: bottom sheet with rounded top corners
+        'rounded-t-2xl max-h-[92vh] overflow-y-auto',
         // Desktop: centered card
-        'sm:rounded-2xl sm:shadow-xl sm:max-w-lg',
+        'sm:rounded-2xl sm:shadow-2xl sm:max-w-lg',
         className
-      )}>
-        {/* Drag handle (mobile only) */}
+      )}
+        style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border)' }}
+      >
+        {/* Drag handle — mobile only */}
         <div className="sm:hidden flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-[--border]" />
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: 'var(--border)' }} />
         </div>
 
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[--border]">
-          <h2 className="text-base font-semibold text-[--foreground]">{title}</h2>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4"
+          style={{ borderBottom: '1px solid var(--border)' }}>
+          <h2 className="text-base font-semibold" style={{ color: 'var(--foreground)' }}>{title}</h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-[--accent] text-[--muted] hover:text-[--foreground] transition-colors"
+            className="p-1.5 rounded-lg transition-colors"
+            style={{ color: 'var(--muted)' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--accent)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
             <X size={16} />
           </button>
         </div>
+
+        {/* Content */}
         <div className="px-5 py-5">{children}</div>
       </div>
     </div>

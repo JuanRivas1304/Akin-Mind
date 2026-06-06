@@ -10,6 +10,28 @@ function userPerms(userId: string) {
   ];
 }
 
+// ── Recalcula totalCards y dueCards de un mazo y los guarda ──────────────────
+export async function syncDeckCounts(deckId: string) {
+  try {
+    // Traer todas las tarjetas del mazo
+    const res = await databases.listDocuments(DATABASE_ID, COLLECTION_CARDS, [
+      Query.equal('deckId', deckId),
+      Query.limit(5000),
+    ]);
+    const cards = res.documents;
+    const now = new Date().toISOString();
+    const due = cards.filter(c => !c.nextReview || c.nextReview <= now).length;
+
+    await databases.updateDocument(DATABASE_ID, COLLECTION_DECKS, deckId, {
+      totalCards: cards.length,
+      dueCards: due,
+      lastStudied: new Date().toISOString(),
+    });
+  } catch {
+    // No bloquear el flujo si falla el sync
+  }
+}
+
 // ---- DECKS ----
 export async function getDecks(userId: string): Promise<Deck[]> {
   const res = await databases.listDocuments(DATABASE_ID, COLLECTION_DECKS, [
@@ -59,7 +81,7 @@ export async function getDueCards(userId: string, limit = 20): Promise<Card[]> {
 
 export async function createCard(userId: string, data: Omit<Card, '$id' | '$createdAt' | '$updatedAt' | 'userId'>) {
   const now = new Date().toISOString();
-  return databases.createDocument(DATABASE_ID, COLLECTION_CARDS, ID.unique(), {
+  const doc = await databases.createDocument(DATABASE_ID, COLLECTION_CARDS, ID.unique(), {
     userId,
     ...data,
     interval: 1,
@@ -67,19 +89,31 @@ export async function createCard(userId: string, data: Omit<Card, '$id' | '$crea
     repetitions: 0,
     nextReview: now,
   }, userPerms(userId));
+  // Actualizar contadores del mazo
+  await syncDeckCounts(data.deckId);
+  return doc;
 }
 
 export async function updateCard(cardId: string, data: Partial<Card>) {
-  return databases.updateDocument(DATABASE_ID, COLLECTION_CARDS, cardId, data);
+  const doc = await databases.updateDocument(DATABASE_ID, COLLECTION_CARDS, cardId, data);
+  // Si cambió nextReview, resync el mazo
+  if (data.nextReview && data.deckId) {
+    await syncDeckCounts(data.deckId as string);
+  }
+  return doc;
 }
 
-export async function deleteCard(cardId: string) {
-  return databases.deleteDocument(DATABASE_ID, COLLECTION_CARDS, cardId);
+export async function deleteCard(cardId: string, deckId?: string) {
+  await databases.deleteDocument(DATABASE_ID, COLLECTION_CARDS, cardId);
+  if (deckId) await syncDeckCounts(deckId);
 }
 
 // ---- REVIEWS ----
 export async function createReview(userId: string, data: Omit<Review, '$id' | '$createdAt'>) {
-  return databases.createDocument(DATABASE_ID, COLLECTION_REVIEWS, ID.unique(), data, userPerms(userId));
+  const doc = await databases.createDocument(DATABASE_ID, COLLECTION_REVIEWS, ID.unique(), data, userPerms(userId));
+  // Resync contadores del mazo tras cada revisión
+  await syncDeckCounts(data.deckId);
+  return doc;
 }
 
 export async function getTodayReviews(userId: string): Promise<Review[]> {
@@ -96,6 +130,7 @@ export async function getTodayReviews(userId: string): Promise<Review[]> {
 export async function getWeekReviews(userId: string): Promise<Review[]> {
   const week = new Date();
   week.setDate(week.getDate() - 7);
+  week.setHours(0, 0, 0, 0);
   const res = await databases.listDocuments(DATABASE_ID, COLLECTION_REVIEWS, [
     Query.equal('userId', userId),
     Query.greaterThanEqual('reviewedAt', week.toISOString()),

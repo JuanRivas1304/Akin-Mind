@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getDecks, getDueCards, getTodayReviews, getUserStats } from '@/lib/database';
+import { getDecks, getDueCards, getTodayReviews, getUserStats, getWeekReviews } from '@/lib/database';
 import { Deck, Card, Review, UserStats } from '@/types';
 import { useRouter } from 'next/navigation';
 import { Flame, BookOpen, CheckCircle, Clock, ChevronRight, Zap } from 'lucide-react';
@@ -19,12 +19,34 @@ function StatCard({ label, value, sub, icon }: { label: string; value: string | 
   );
 }
 
+/** Returns a Set of weekday indices (0=Mon…6=Sun) where the user studied this week */
+function getStudiedDaysThisWeek(weekReviews: Review[]): Set<number> {
+  const studied = new Set<number>();
+  // Find the Monday of the current week
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun,1=Mon…6=Sat
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  monday.setHours(0, 0, 0, 0);
+
+  weekReviews.forEach(r => {
+    const d = new Date(r.reviewedAt);
+    if (d >= monday) {
+      // day index 0=Mon…6=Sun
+      const idx = (d.getDay() + 6) % 7;
+      studied.add(idx);
+    }
+  });
+  return studied;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [decks, setDecks] = useState<Deck[]>([]);
   const [dueCards, setDueCards] = useState<Card[]>([]);
   const [todayReviews, setTodayReviews] = useState<Review[]>([]);
+  const [weekReviews, setWeekReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -35,8 +57,9 @@ export default function DashboardPage() {
       getDueCards(user.$id, 50),
       getTodayReviews(user.$id),
       getUserStats(user.$id),
-    ]).then(([d, c, r, s]) => {
-      setDecks(d); setDueCards(c); setTodayReviews(r); setStats(s);
+      getWeekReviews(user.$id),
+    ]).then(([d, c, r, s, wr]) => {
+      setDecks(d); setDueCards(c); setTodayReviews(r); setStats(s); setWeekReviews(wr);
     }).finally(() => setLoading(false));
   }, [user]);
 
@@ -50,8 +73,10 @@ export default function DashboardPage() {
   );
 
   const streak = stats?.currentStreak || 0;
-  const days = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-  const today = new Date().getDay();
+  const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  // today's index 0=Mon…6=Sun
+  const todayIdx = (new Date().getDay() + 6) % 7;
+  const studiedDays = getStudiedDaysThisWeek(weekReviews);
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8 max-w-4xl mx-auto pb-24 lg:pb-8">
@@ -67,7 +92,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Stats — 2 cols on mobile, 4 on desktop */}
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         <StatCard label="Pendientes" value={dueCards.length} icon={<Clock size={12} />} sub="para hoy" />
         <StatCard label="Hoy" value={todayReviews.length} icon={<CheckCircle size={12} />} sub="estudiadas" />
@@ -75,7 +100,7 @@ export default function DashboardPage() {
         <StatCard label="Mazos" value={decks.length} icon={<BookOpen size={12} />} />
       </div>
 
-      {/* Streak week */}
+      {/* Week tracker — only marks days with real reviews */}
       <div className="bg-[--card-bg] rounded-2xl border border-[--border] p-4 sm:p-5 mb-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-[--foreground]">Esta semana</h2>
@@ -86,28 +111,33 @@ export default function DashboardPage() {
           )}
         </div>
         <div className="flex gap-1.5 sm:gap-2">
-          {days.map((d, i) => {
-            const isToday = i === (today === 0 ? 6 : today - 1);
-            const studied = i < (today === 0 ? 6 : today - 1);
+          {DAY_LABELS.map((label, i) => {
+            const isToday = i === todayIdx;
+            // Only mark green if there are actual reviews logged for this day
+            const didStudy = studiedDays.has(i);
+            const isFuture = i > todayIdx;
+
             return (
-              <div key={d} className="flex-1 flex flex-col items-center gap-1.5">
+              <div key={label} className="flex-1 flex flex-col items-center gap-1.5">
                 <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs font-medium transition-colors
                   ${isToday
-                    ? 'bg-[--primary] text-[--primary-fg]'
-                    : studied
+                    ? 'bg-[--primary] text-[--primary-fg] ring-2 ring-[--primary]/20'
+                    : didStudy
                       ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                      : 'bg-[--accent] text-[--muted]'
+                      : isFuture
+                        ? 'bg-[--accent] text-[--muted] opacity-40'
+                        : 'bg-[--accent] text-[--muted]'
                   }`}>
-                  {studied && !isToday ? '✓' : d}
+                  {isToday ? label : didStudy ? '✓' : label}
                 </div>
-                <span className="text-xs text-[--muted] hidden sm:block">{d}</span>
+                <span className="text-xs text-[--muted] hidden sm:block">{label}</span>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* CTA banner */}
+      {/* CTA */}
       {dueCards.length > 0 && decks.length > 0 && (
         <div className="bg-[--primary] rounded-2xl p-4 sm:p-5 mb-5 flex items-center justify-between gap-3">
           <div className="min-w-0">
