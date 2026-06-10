@@ -50,7 +50,7 @@ export function StudySession({ cards, deckId, deckName, deckColor, userId, onCom
   const card  = queue[current];
   const pct   = Math.round((done / total) * 100);
 
-  const reveal = () => { if (!revealed) setRevealed(true); };
+  const reveal = () => setRevealed(v => !v);
 
   const handleRating = useCallback(async (rating: Rating) => {
     if (!card || transitioning) return;
@@ -93,7 +93,8 @@ export function StudySession({ cards, deckId, deckName, deckColor, userId, onCom
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (!revealed) { if (e.code === 'Space') { e.preventDefault(); reveal(); } return; }
+      if (e.code === 'Space') { e.preventDefault(); reveal(); return; }
+      if (!revealed) return;
       const map: Record<string, Rating> = { '1': 1, '2': 2, '3': 3, '4': 4 };
       if (map[e.key]) handleRating(map[e.key]);
     };
@@ -143,7 +144,14 @@ export function StudySession({ cards, deckId, deckName, deckColor, userId, onCom
       <div className="flex-1 flex flex-col px-4 py-5 sm:px-6 sm:py-8 max-w-2xl mx-auto w-full">
 
         {/* ─── FLASHCARD ─────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col rounded-2xl border-2 p-5 sm:p-8 mb-5 transition-all duration-250"
+        <div
+          className="flex-1 flex flex-col rounded-2xl border-2 p-5 sm:p-8 mb-5 transition-all duration-250 cursor-pointer"
+          onClick={() => {
+            // Don't flip if the user just selected text
+            const sel = window.getSelection()?.toString().trim();
+            if (sel && sel.length > 0) return;
+            reveal();
+          }}
           style={{
             backgroundColor: revealed ? '#f0fdf4' : colors.bg,
             borderColor: revealed ? '#86efac' : colors.border,
@@ -151,53 +159,56 @@ export function StudySession({ cards, deckId, deckName, deckColor, userId, onCom
             transform: transitioning ? 'scale(0.96) translateY(4px)' : 'scale(1)',
           }}>
 
-          {/* Face label + audio button for current face */}
+          {/* Face label + audio button */}
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold uppercase tracking-widest"
-              style={{ color: revealed ? '#16a34a' : colors.text, opacity: 0.55 }}>
-              {revealed ? 'Respuesta' : 'Pregunta'}
-            </p>
-            {/* Reproduce el texto COMPLETO de la cara visible */}
-            <SpeakButton
-              text={revealed ? card.answer : card.question}
-              size="sm"
-              label={revealed ? 'respuesta' : 'pregunta'}
-            />
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-widest"
+                style={{ color: revealed ? '#16a34a' : colors.text, opacity: 0.55 }}>
+                {revealed ? 'Respuesta' : 'Pregunta'}
+              </p>
+              {/* Flip indicator */}
+              <span className="text-xs px-1.5 py-0.5 rounded-md"
+                style={{
+                  backgroundColor: revealed ? '#bbf7d0' : colors.border,
+                  color: revealed ? '#14532d' : colors.text,
+                  opacity: 0.7,
+                  fontSize: 10,
+                }}>
+                {revealed ? '↩ ver pregunta' : '↩ ver respuesta'}
+              </span>
+            </div>
+            {/* Audio button — stop propagation so click doesn't flip the card */}
+            <div onClick={e => e.stopPropagation()}>
+              <SpeakButton
+                text={revealed ? card.answer : card.question}
+                size="sm"
+                label={revealed ? 'respuesta' : 'pregunta'}
+              />
+            </div>
           </div>
 
-          {/* ── Text with selection popup ─────────────────────── */}
-          {/* Selecciona cualquier parte del texto y aparece un botón flotante */}
+          {/* Text with selection popup */}
           <SelectionSpeakPopup>
             <p
-              className="text-lg sm:text-xl font-medium leading-relaxed text-center whitespace-pre-wrap cursor-text"
+              className="text-lg sm:text-xl font-medium leading-relaxed text-center whitespace-pre-wrap"
               style={{ color: revealed ? '#14532d' : colors.text, userSelect: 'text' }}
             >
               {revealed ? card.answer : card.question}
             </p>
           </SelectionSpeakPopup>
 
-          {/* When revealed: also offer to hear the question */}
-          {revealed && (
-            <div className="flex items-center justify-center gap-2 mt-4 pt-4 flex-wrap"
-              style={{ borderTop: '1px solid #bbf7d0' }}>
-              <span className="text-xs" style={{ color: '#16a34a', opacity: 0.65 }}>
-                Escuchar la pregunta:
-              </span>
-              <SpeakButton text={card.question} size="sm" label="pregunta" />
-            </div>
-          )}
-
-          {/* Hint to reveal */}
-          {!revealed && (
-            <button
-              onClick={reveal}
-              className="mt-4 text-xs flex items-center justify-center gap-1.5 w-full"
-              style={{ color: colors.text, opacity: 0.4 }}>
-              <Eye size={12} />
-              Toca aquí para revelar
-              <span className="hidden sm:inline ml-1">· Espacio</span>
-            </button>
-          )}
+          {/* Bottom of card: audio for the OTHER side */}
+          <div className="flex items-center justify-center gap-2 mt-4 pt-4 flex-wrap"
+            style={{ borderTop: `1px solid ${revealed ? '#bbf7d0' : colors.border}` }}
+            onClick={e => e.stopPropagation()}>
+            <span className="text-xs" style={{ color: revealed ? '#16a34a' : colors.text, opacity: 0.55 }}>
+              {revealed ? 'Escuchar pregunta:' : 'Toca la tarjeta para ver la respuesta ·'}
+            </span>
+            {revealed
+              ? <SpeakButton text={card.question} size="sm" label="pregunta" />
+              : <span className="text-xs hidden sm:inline" style={{ color: colors.text, opacity: 0.4 }}>Espacio</span>
+            }
+          </div>
         </div>
 
         {/* Rating buttons */}
